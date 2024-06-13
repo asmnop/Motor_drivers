@@ -8,6 +8,7 @@
 
 #include "TB6612FNG.h"
 #include "tim.h"
+#include "universal_data.h"
 
 
 //	UWAGI:
@@ -40,10 +41,8 @@
 //	do którego jest również podłączony moduł BTM-222 (przygasające lampki) to należy wprowadzic delaye pomiędzy
 //	załączeniami poszczególnych silników. Delaye około 50ms. W przeciwnym razie może nastąpic utrata połączenia
 //	pomiedzy PC a BTM-222,
-
 //	-nie podłączać linii sterujących kierunkiem obrotu silników do pinów uC odpowiedzialnych za programowanie tzn. PB3 (MOSI),
 //	PB4 (MISO), PB5 (CLK). Podczas programowania silniki zostają uruchomione. Linia PWMA podłączona do Vcc - stan wysoki,
-
 //	-zakładając, że maksymalna F_CPU wynosi 20 000 000 to musimy wprowadzic opóźnienia tylko dla 'Dead time L-->H'
 //	-opóźnienie należy wprowadzic już około dla częstotliwości F_CPU > 4 000 000,
 //	-maksymalne opóźnienie dla F_CPU to 5 NOP-ów,
@@ -51,14 +50,11 @@
 //	z trybu Short Break do trybu ruchu,
 //	-WAŻNE: jeśli podłączamy plus z silnika do plusa zasilania i minus z silnika do minusa zasilania to silnik kręci się w CCW!!!
 
-
-
 //	DEFINICJA KIERUNKU OBROTÓW:
 //	-kierunek obrotów CW - clockwise - jest rozumiany jako zgodny z ruchem wskazówek zegara patrząc na silnik od strony
 //	wału wyjściowego,
 //	-kierunek obrotów CCW - counter-clockwise - jest rozumiany jako przeciwny do ruchu wskazówek zegara patrząc na silnik
 //	od strony wału wyjściowego,
-
 
 //	TRYBY PRACY:
 //	-dostępne tryby pracy do obsługi: Short Brake, Stop, Standby, CW, CCW,
@@ -108,6 +104,17 @@
 //	-jeśli chcemy zmienić kierunek obrotów silnika to musimy wykonać przejście przez prędkość zero czy wypełnienie
 //	sygnału PWM musi w pewnym momencie wynosić zero,
 
+//	PRZEMYŚLENIA:
+//	-wykonać funkcję która ustawia kierunek obrotów na CW lub CCW,
+//	-foo która zmienia kierunek obrotów z zachowaniem prędkości obrotowej,
+
+
+
+void TM6612FNG_init(TB6612FNG_t *motor);
+uint8_t TB6612FNG_get_dir(TB6612FNG_t *motor);
+void TB6612FNG_dir(TB6612FNG_t *motor, const uint8_t dir);
+void TB6612FNG_speed(TB6612FNG_t *motor, uint8_t speed);
+
 
 void TM6612FNG_init(TB6612FNG_t *motor)
 {
@@ -116,22 +123,35 @@ void TM6612FNG_init(TB6612FNG_t *motor)
 	HAL_GPIO_WritePin(motor->port_IN1, motor->pin_IN1, GPIO_PIN_RESET);
 	HAL_GPIO_WritePin(motor->port_IN2, motor->pin_IN2, GPIO_PIN_RESET);
 
-	__HAL_TIM_SetCompare(motor->htim, motor->Channel, 0);					//	Równoważne z 'htim2.Instance->CCR1 = 0;'
+	__HAL_TIM_SetCompare(motor->htim, motor->Channel, motor->duty);			//	Równoważne z 'htim2.Instance->CCR1 = 0;'
 
 	HAL_TIM_PWM_Start(motor->htim, motor->Channel);
 }
 
 void TB6612FNG_dir(TB6612FNG_t *motor, const uint8_t dir)
 {
-	if(dir == 1)
+	uint8_t set_dir = TB6612FNG_get_dir(motor);
+
+	if(dir != set_dir)
 	{
+		uint16_t speed_temp = motor->duty;
+
+		TB6612FNG_speed(motor, 0);
 		HAL_GPIO_WritePin(motor->port_IN1, motor->pin_IN1, GPIO_PIN_SET);
-		HAL_GPIO_WritePin(motor->port_IN2, motor->pin_IN2, GPIO_PIN_RESET);
-	}
-	else if(dir == 0)
-	{
-		HAL_GPIO_WritePin(motor->port_IN1, motor->pin_IN1, GPIO_PIN_RESET);
 		HAL_GPIO_WritePin(motor->port_IN2, motor->pin_IN2, GPIO_PIN_SET);
+
+		if(dir == CW)
+		{
+			HAL_GPIO_WritePin(motor->port_IN1, motor->pin_IN1, GPIO_PIN_SET);
+			HAL_GPIO_WritePin(motor->port_IN2, motor->pin_IN2, GPIO_PIN_RESET);
+		}
+		else if(dir == CCW)
+		{
+			HAL_GPIO_WritePin(motor->port_IN1, motor->pin_IN1, GPIO_PIN_RESET);
+			HAL_GPIO_WritePin(motor->port_IN2, motor->pin_IN2, GPIO_PIN_SET);
+		}
+
+		TB6612FNG_speed(motor, speed_temp);
 	}
 }
 
@@ -147,9 +167,29 @@ void TB6612FNG_speed(TB6612FNG_t *motor, uint8_t speed)
 		speed = motor->htim->Instance->ARR;
 
 	__HAL_TIM_SetCompare(motor->htim, motor->Channel, speed);
+
+	motor->duty = speed;
+	//__HAL_TIM_GET_COMPARE(motor->htim, motor->Channel);
 }
 
+uint8_t TB6612FNG_get_dir(TB6612FNG_t *motor)
+{
+	uint8_t state_IN1 = 0;
+	uint8_t state_IN2 = 0;
 
+	state_IN1 = HAL_GPIO_ReadPin(motor->port_IN1, motor->pin_IN1);
+	state_IN2 = HAL_GPIO_ReadPin(motor->port_IN2, motor->pin_IN2);
+
+	if(state_IN1 != state_IN2)
+	{
+		if(state_IN1 == 1)
+			return CW;
+		else
+			return CCW;
+	}
+
+	return 88;
+}
 
 
 

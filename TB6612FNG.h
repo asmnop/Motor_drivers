@@ -23,6 +23,7 @@ typedef struct TB6612FNG_LINK_STRUCT
 	uint16_t pin_PWM;
 	TIM_HandleTypeDef *htim;
 	uint32_t Channel;
+	uint16_t duty;
 }TB6612FNG_t;
 
 
